@@ -1,6 +1,8 @@
+import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from langchain_community.document_loaders import (
     CSVLoader,
@@ -22,8 +24,44 @@ from config import (
     DOCS_DIR,
     EMBEDDING_MODEL,
     LOGS_DIR,
+    STORAGE_DIR,
     SUPPORTED_FORMATS,
 )
+
+MD5_INDEX_FILE = STORAGE_DIR / "md5_index.json"
+
+
+def _compute_md5(file_path: Path) -> str:
+    """计算文件内容的 MD5 哈希值"""
+    with open(file_path, "rb") as f:
+        return hashlib.md5(f.read()).hexdigest()
+
+
+def _load_md5_index() -> dict:
+    """读取 MD5 索引文件，返回 {filename: md5} 字典"""
+    if not MD5_INDEX_FILE.exists():
+        return {}
+    with open(MD5_INDEX_FILE) as f:
+        return json.load(f)
+
+
+def _save_md5_index(index: dict):
+    """保存 MD5 索引到文件"""
+    with open(MD5_INDEX_FILE, "w") as f:
+        json.dump(index, f, ensure_ascii=False, indent=2)
+
+
+def is_duplicate(file_path: Path) -> Optional[str]:
+    """
+    检查文件是否已存在（通过 MD5 对比内容，而非文件名）
+    返回：已存在的文件名（若重复），或 None（若是新文件）
+    """
+    new_md5 = _compute_md5(file_path)
+    index = _load_md5_index()
+    for filename, md5 in index.items():
+        if md5 == new_md5:
+            return filename  # 返回原来的文件名，方便提示用户
+    return None
 
 
 def _get_embeddings():
@@ -63,10 +101,15 @@ def _load_document(file_path: Path):
 
 def process_and_store(file_path: Path, category: str, filename: str) -> dict:
     """
-    完整的文档处理流程：加载 → 切块 → embedding → 存入 ChromaDB
+    完整的文档处理流程：MD5去重 → 加载 → 切块 → embedding → 存入 ChromaDB
 
     返回：{"chunks": int, "filename": str, "category": str}
     """
+    # 0. MD5 去重检查（比对内容，与文件名无关）
+    existing = is_duplicate(file_path)
+    if existing:
+        raise ValueError(f"文档内容与已上传的「{existing}」重复，跳过导入")
+
     # 1. 加载文档
     docs = _load_document(file_path)
 
@@ -87,19 +130,30 @@ def process_and_store(file_path: Path, category: str, filename: str) -> dict:
     vectorstore = _get_vectorstore()
     vectorstore.add_documents(chunks)
 
-    # 5. 记录日志
+    # 5. 记录 MD5 索引
+    index = _load_md5_index()
+    index[filename] = _compute_md5(file_path)
+    _save_md5_index(index)
+
+    # 6. 记录日志
     _log_upload(filename, category, len(chunks))
 
     return {"chunks": len(chunks), "filename": filename, "category": category}
 
 
 def delete_document(filename: str) -> bool:
-    """从 ChromaDB 中删除指定文件名的所有文档块"""
+    """从 ChromaDB 和 MD5 索引中删除指定文件名的所有记录"""
     vectorstore = _get_vectorstore()
     results = vectorstore.get(where={"source_filename": filename})
     if not results["ids"]:
         return False
     vectorstore.delete(ids=results["ids"])
+
+    # 同步清除 MD5 索引
+    index = _load_md5_index()
+    index.pop(filename, None)
+    _save_md5_index(index)
+
     return True
 
 
