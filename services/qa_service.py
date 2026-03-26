@@ -4,9 +4,10 @@ from langchain_community.chat_models import ChatTongyi
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 
 from config import DASHSCOPE_API_KEY, LLM_MODEL, MAX_HISTORY_ROUNDS
-from services.retriever_service import retrieve
+from services.retriever_service import format_docs, get_retriever
 
 # ── 问题类型关键词映射 ──────────────────────────────────────
 _QUESTION_TYPE_KEYWORDS = {
@@ -40,15 +41,6 @@ def _infer_question_type(question: str) -> str:
     return "咨询"
 
 
-def _build_context(chunks: list[dict]) -> str:
-    """将检索到的 chunk 列表拼成 prompt 中的参考材料文本"""
-    if not chunks:
-        return "（知识库中暂无相关文档）"
-    return "\n\n---\n\n".join(
-        f"【来源：{c['source']}】\n{c['content']}" for c in chunks
-    )
-
-
 def _build_history_messages(history: list[dict]) -> list:
     """将历史对话转成 LangChain 消息对象，最多保留 MAX_HISTORY_ROUNDS 轮"""
     messages = []
@@ -64,7 +56,7 @@ def ask(
     history: Optional[list[dict]] = None,
 ) -> dict:
     """
-    RAG 问答主流程：检索 → 构建 prompt → 调用 LLM → 返回结构化结果
+    RAG 问答主流程（LCEL 风格）
 
     参数：
         question: 用户问题
@@ -75,44 +67,45 @@ def ask(
         {
             "answer": str,        # LLM 回答
             "sources": list[str], # 引用文档名（去重）
-            "chunks": list[dict], # 检索到的原始 chunk
             "question_type": str, # 推断的问题类型
         }
     """
-    # 1. 推断问题类型
     question_type = _infer_question_type(question)
+    retriever = get_retriever(category)
 
-    # 2. 检索相关 chunk
-    chunks = retrieve(question, category)
-
-    # 3. 构建 prompt（system + 历史消息占位符 + 用户消息）
     prompt = ChatPromptTemplate.from_messages([
         SystemMessage(content=SYSTEM_PROMPT),
         MessagesPlaceholder(variable_name="history"),
         ("human", USER_PROMPT_TEMPLATE),
     ])
 
-    # 4. 初始化 LLM
-    llm = ChatTongyi(
-        model=LLM_MODEL,
-        dashscope_api_key=DASHSCOPE_API_KEY,
+    llm = ChatTongyi(model=LLM_MODEL, dashscope_api_key=DASHSCOPE_API_KEY)
+
+    # ── LCEL chain（黑马风格）────────────────────────────────
+    # retriever 直接串进 chain，|format_docs 把 Document 列表转成字符串
+    # RunnablePassthrough() 把原始输入（question）原样传到下一步
+    # RunnableLambda(lambda _: ...) 忽略输入，注入静态值（问题类型/分类/历史）
+    rag_chain = (
+        {
+            "context": retriever | format_docs,
+            "question": RunnablePassthrough(),
+            "question_type": RunnableLambda(lambda _: question_type),
+            "category": RunnableLambda(lambda _: category or "全部"),
+            "history": RunnableLambda(lambda _: _build_history_messages(history or [])),
+        }
+        | prompt
+        | llm
+        | StrOutputParser()
     )
 
-    # 5. 组装链：prompt → llm → 字符串输出
-    chain = prompt | llm | StrOutputParser()
+    answer = rag_chain.invoke(question)
 
-    # 6. 执行
-    answer = chain.invoke({
-        "history": _build_history_messages(history or []),
-        "question_type": question_type,
-        "category": category or "全部",
-        "context": _build_context(chunks),
-        "question": question,
-    })
+    # 单独调用 retriever 拿来源文件名（用于 UI 显示引用）
+    docs = retriever.invoke(question)
+    sources = list({d.metadata.get("source_filename", "未知") for d in docs})
 
     return {
         "answer": answer,
-        "sources": list({c["source"] for c in chunks}),
-        "chunks": chunks,
+        "sources": sources,
         "question_type": question_type,
     }

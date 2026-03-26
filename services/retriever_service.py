@@ -2,6 +2,8 @@ from typing import Optional
 
 from langchain_chroma import Chroma
 from langchain_community.embeddings import DashScopeEmbeddings
+from langchain_core.documents import Document
+from langchain_core.vectorstores import VectorStoreRetriever
 
 from config import (
     CHROMA_COLLECTION_NAME,
@@ -24,35 +26,26 @@ def _get_vectorstore() -> Chroma:
     )
 
 
-def retrieve(question: str, category: Optional[str] = None) -> list[dict]:
+def get_retriever(category: Optional[str] = None) -> VectorStoreRetriever:
     """
-    根据问题检索最相关的 chunk，返回内容、来源和相似度分数。
+    返回向量数据库检索器，可直接用于 LangChain chain。
 
-    参数：
-        question: 用户问题
-        category: 文档分类过滤，None 或 "全部" 时不过滤
-
-    返回：[{"content": str, "source": str, "category": str, "score": float}, ...]
+    用法：
+        retriever = get_retriever(category="HR 政策")
+        chain = {"context": retriever | format_docs, ...} | prompt | llm | parser
     """
     vectorstore = _get_vectorstore()
-
-    filter_dict = None
+    search_kwargs: dict = {"k": TOP_K_RESULTS}
     if category and category != "全部":
-        filter_dict = {"category": category}
+        search_kwargs["filter"] = {"category": category}
+    return vectorstore.as_retriever(search_kwargs=search_kwargs)
 
-    # similarity_search_with_score 同时返回文档和相似度分数
-    results = vectorstore.similarity_search_with_score(
-        query=question,
-        k=TOP_K_RESULTS,
-        filter=filter_dict,
+
+def format_docs(docs: list[Document]) -> str:
+    """将 Document 列表格式化为 prompt 中的参考材料文本"""
+    if not docs:
+        return "（知识库中暂无相关文档）"
+    return "\n\n---\n\n".join(
+        f"【来源：{doc.metadata.get('source_filename', '未知')}】\n{doc.page_content}"
+        for doc in docs
     )
-
-    return [
-        {
-            "content": doc.page_content,
-            "source": doc.metadata.get("source_filename", "未知"),
-            "category": doc.metadata.get("category", "其他"),
-            "score": round(float(score), 4),
-        }
-        for doc, score in results
-    ]
