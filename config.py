@@ -17,7 +17,7 @@ for d in [CHROMA_DIR, DOCS_DIR, LOGS_DIR]:
 
 # ── LLM 配置（阿里云百炼）─────────────────────────────────
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
-LLM_MODEL = "qwen-plus"           # 通义千问 plus 版本，性价比最高
+LLM_MODEL = "qwen3-max"           # 通义千问 3 max 版本，与 OfficeMate 一致
 EMBEDDING_MODEL = "text-embedding-v4"  # DashScope embedding 模型
 
 # ── ChromaDB 配置 ──────────────────────────────────────────
@@ -25,9 +25,10 @@ CHROMA_COLLECTION_NAME = "officemate_docs"
 CHROMA_PERSIST_DIR = str(CHROMA_DIR)
 
 # ── 文档处理配置 ───────────────────────────────────────────
-CHUNK_SIZE = 500        # 每个文本块的字符数
-CHUNK_OVERLAP = 50      # 相邻块的重叠字符数（保证上下文连贯）
-TOP_K_RESULTS = 5       # 检索时返回的最相关文档块数量
+CHUNK_SIZE = 800        # 每个文本块的字符数（参考 OfficeMate）
+CHUNK_OVERLAP = 120     # 相邻块的重叠字符数（保证上下文连贯）
+TOP_K_RESULTS = 4       # 检索时返回的最相关文档块数量
+MAX_HISTORY_ROUNDS = 4  # 多轮对话保留的历史轮数
 
 # ── 支持的文档格式 ─────────────────────────────────────────
 SUPPORTED_FORMATS = [".pdf", ".txt", ".docx", ".xlsx", ".csv"]
