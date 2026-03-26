@@ -1,5 +1,6 @@
 import hashlib
 import json
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -21,7 +22,6 @@ from config import (
     CHROMA_COLLECTION_NAME,
     CHROMA_PERSIST_DIR,
     DASHSCOPE_API_KEY,
-    DOCS_DIR,
     EMBEDDING_MODEL,
     LOGS_DIR,
     STORAGE_DIR,
@@ -99,16 +99,15 @@ def _load_document(file_path: Path):
     return loader.load()
 
 
-def process_and_store(file_path: Path, category: str, filename: str) -> dict:
+def process_and_store(file_path: Path, category: str, filename: str) -> Optional[dict]:
     """
     完整的文档处理流程：MD5去重 → 加载 → 切块 → embedding → 存入 ChromaDB
 
     返回：{"chunks": int, "filename": str, "category": str}
     """
     # 0. MD5 去重检查（比对内容，与文件名无关）
-    existing = is_duplicate(file_path)
-    if existing:
-        raise ValueError(f"文档内容与已上传的「{existing}」重复，跳过导入")
+    if is_duplicate(file_path):
+        return None
 
     # 1. 加载文档
     docs = _load_document(file_path)
@@ -176,11 +175,12 @@ def list_documents() -> list[dict]:
 
 
 def save_uploaded_file(uploaded_file) -> Path:
-    """将 Streamlit 上传的文件保存到本地 storage/docs/"""
-    dest = DOCS_DIR / uploaded_file.name
-    with open(dest, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    return dest
+    """将 Streamlit 上传的文件保存为临时文件，处理完后由调用方负责删除"""
+    suffix = Path(uploaded_file.name).suffix
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp.write(uploaded_file.getbuffer())
+    tmp.close()
+    return Path(tmp.name)
 
 
 def _log_upload(filename: str, category: str, chunks: int):
