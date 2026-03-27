@@ -134,21 +134,20 @@ if "session_id" not in st.session_state:
         _new_session()
 
 
-# ── CSS：推荐问题/历史会话按钮去边框并左对齐 ─────────────
+# ── CSS：推荐问题按钮去除边框，改为文本样式 ───────────────
 st.markdown("""
 <style>
-[data-testid="stSidebar"] button[data-testid="baseButton-secondary"] {
+[data-testid="stSidebar"] [data-testid="stButton"] button[kind="secondary"] {
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
     color: inherit !important;
     text-align: left !important;
-    justify-content: flex-start !important;
-    padding: 2px 8px !important;
+    padding: 2px 4px !important;
     font-size: 0.9rem !important;
 }
-[data-testid="stSidebar"] button[data-testid="baseButton-secondary"]:hover {
-    background: rgba(0, 0, 0, 0.05) !important;
+[data-testid="stSidebar"] [data-testid="stButton"] button[kind="secondary"]:hover {
+    background: rgba(0,0,0,0.06) !important;
     border-radius: 4px !important;
 }
 </style>
@@ -168,11 +167,10 @@ with st.sidebar:
     st.caption("当前会话 ID")
     st.code(st.session_state.session_id, language=None)
 
-    # 新建会话（白色框包裹）
-    with st.container(border=True):
-        if st.button("新建会话", use_container_width=True, type="secondary"):
-            _new_session()
-            st.rerun()
+    # 新建会话（白色按钮 = secondary）
+    if st.button("新建会话", use_container_width=True, type="secondary"):
+        _new_session()
+        st.rerun()
 
     st.divider()
 
