@@ -81,10 +81,10 @@ sample_dir = Path("sample_docs")
 sample_files = list(sample_dir.glob("*")) if sample_dir.exists() else []
 supported = [f for f in sample_files if f.suffix.lower() in SUPPORTED_FORMATS]
 
-if not supported:
-    st.info("sample_docs/ 目录暂无示例文档，可将文件放入该目录后刷新。")
-else:
-    if st.button("一键导入示例文档"):
+if st.button("一键导入示例文档"):
+    if not supported:
+        st.warning("sample_docs/ 目录暂无文件，请先放入 PDF/TXT/DOCX/XLSX/CSV 文件。")
+    else:
         ok, dup, fail = 0, 0, 0
         # 示例文档按文件名推断分类（可在此自定义映射）
         _sample_category_map = {
