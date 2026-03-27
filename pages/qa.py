@@ -134,20 +134,34 @@ if "session_id" not in st.session_state:
         _new_session()
 
 
-# ── CSS：推荐问题按钮去除边框，改为文本样式 ───────────────
+# ── CSS：新建会话保留白色边框；推荐/历史按钮去边框左对齐 ──
 st.markdown("""
 <style>
-[data-testid="stSidebar"] [data-testid="stButton"] button[kind="secondary"] {
+/* 新建会话 (primary) → 覆盖为白色有边框样式 */
+[data-testid="stSidebar"] button[data-testid="baseButton-primary"] {
+    background-color: white !important;
+    color: rgb(49, 51, 63) !important;
+    border: 1px solid rgba(49, 51, 63, 0.2) !important;
+    box-shadow: none !important;
+}
+[data-testid="stSidebar"] button[data-testid="baseButton-primary"]:hover {
+    background-color: rgb(240, 242, 246) !important;
+    border-color: rgba(49, 51, 63, 0.4) !important;
+}
+/* 推荐问题 & 历史会话 (secondary) → 无边框，左对齐文本 */
+[data-testid="stSidebar"] button[data-testid="baseButton-secondary"] {
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
     color: inherit !important;
     text-align: left !important;
+    justify-content: flex-start !important;
     padding: 2px 4px !important;
     font-size: 0.9rem !important;
+    font-weight: normal !important;
 }
-[data-testid="stSidebar"] [data-testid="stButton"] button[kind="secondary"]:hover {
-    background: rgba(0,0,0,0.06) !important;
+[data-testid="stSidebar"] button[data-testid="baseButton-secondary"]:hover {
+    background: rgba(0, 0, 0, 0.05) !important;
     border-radius: 4px !important;
 }
 </style>
@@ -167,8 +181,8 @@ with st.sidebar:
     st.caption("当前会话 ID")
     st.code(st.session_state.session_id, language=None)
 
-    # 新建会话（白色按钮 = secondary）
-    if st.button("新建会话", use_container_width=True, type="secondary"):
+    # 新建会话：type="primary" + CSS 覆盖成白色有边框
+    if st.button("新建会话", type="primary"):
         _new_session()
         st.rerun()
 
