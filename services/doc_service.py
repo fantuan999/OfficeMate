@@ -99,33 +99,45 @@ def _load_document(file_path: Path):
     return loader.load()
 
 
-def process_and_store(file_path: Path, category: str, filename: str) -> Optional[dict]:
+def process_and_store(
+    file_path: Path,
+    category: str,
+    filename: str,
+    title: str = "",
+    version: str = "v1.0",
+    source_label: str = "manual",
+) -> Optional[dict]:
     """
     完整的文档处理流程：MD5去重 → 加载 → 切块 → embedding → 存入 ChromaDB
 
-    返回：{"chunks": int, "filename": str, "category": str}
+    返回：{"chunks": int, "filename": str, "category": str, "title": str, "version": str}
     """
     # 0. MD5 去重检查（比对内容，与文件名无关）
     if is_duplicate(file_path):
         return None
 
+    effective_title = title.strip() if title.strip() else Path(filename).stem
+
     # 1. 加载文档
     docs = _load_document(file_path)
 
     # 2. 切块
-    # RecursiveCharacterTextSplitter 会按段落、句子、词依次切割，保证语义完整性
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
+        separators=["\n\n", "\n", ".", "!", "?", "。", "！", "？", " ", ""]
     )
     chunks = splitter.split_documents(docs)
 
-    # 3. 给每个块加上 metadata（分类、来源文件名）
+    # 3. 给每个块加上完整 metadata
     for chunk in chunks:
         chunk.metadata["category"] = category
         chunk.metadata["source_filename"] = filename
+        chunk.metadata["title"] = effective_title
+        chunk.metadata["version"] = version
+        chunk.metadata["source_label"] = source_label
 
-    # 4. 存入 ChromaDB（内部自动调用 DashScope API 生成 embedding）
+    # 4. 存入 ChromaDB
     vectorstore = _get_vectorstore()
     vectorstore.add_documents(chunks)
 
@@ -135,9 +147,15 @@ def process_and_store(file_path: Path, category: str, filename: str) -> Optional
     _save_md5_index(index)
 
     # 6. 记录日志
-    _log_upload(filename, category, len(chunks))
+    _log_upload(filename, category, len(chunks), effective_title, version, source_label)
 
-    return {"chunks": len(chunks), "filename": filename, "category": category}
+    return {
+        "chunks": len(chunks),
+        "filename": filename,
+        "category": category,
+        "title": effective_title,
+        "version": version,
+    }
 
 
 def delete_document(filename: str) -> bool:
@@ -157,7 +175,7 @@ def delete_document(filename: str) -> bool:
 
 
 def list_documents() -> list[dict]:
-    """列出所有已上传文档（去重，按文件名聚合）"""
+    """列出所有已上传文档（去重，按文件名聚合，含 title/version/source_label）"""
     vectorstore = _get_vectorstore()
     results = vectorstore.get()
     if not results["metadatas"]:
@@ -169,7 +187,10 @@ def list_documents() -> list[dict]:
         if fname not in seen:
             seen[fname] = {
                 "filename": fname,
+                "title": meta.get("title", Path(fname).stem),
                 "category": meta.get("category", "其他"),
+                "version": meta.get("version", ""),
+                "source_label": meta.get("source_label", "manual"),
             }
     return list(seen.values())
 
@@ -183,7 +204,8 @@ def save_uploaded_file(uploaded_file) -> Path:
     return Path(tmp.name)
 
 
-def _log_upload(filename: str, category: str, chunks: int):
+def _log_upload(filename: str, category: str, chunks: int,
+                title: str = "", version: str = "", source_label: str = "manual"):
     """记录上传日志到 storage/logs/"""
     log_file = LOGS_DIR / "uploads.json"
     logs = []
@@ -191,10 +213,15 @@ def _log_upload(filename: str, category: str, chunks: int):
         with open(log_file) as f:
             logs = json.load(f)
     logs.append({
+        "title": title or Path(filename).stem,
         "filename": filename,
+        "file_type": Path(filename).suffix.lstrip("."),
         "category": category,
-        "chunks": chunks,
-        "timestamp": datetime.now().isoformat(),
+        "version": version,
+        "source_label": source_label,
+        "chunk_count": chunks,
+        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "success",
     })
     with open(log_file, "w") as f:
         json.dump(logs, f, ensure_ascii=False, indent=2)
