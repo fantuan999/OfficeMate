@@ -9,13 +9,6 @@ st.set_page_config(page_title="知识管理 - OfficeMate", page_icon="📚", lay
 
 st.title("📚 知识管理")
 
-# ── 侧边栏导航 ─────────────────────────────────────────────
-with st.sidebar:
-    st.title("🏢 OfficeMate")
-    st.divider()
-    st.page_link("app.py", label="智能问答", icon="💬")
-    st.page_link("pages/upload.py", label="上传文档", icon="📤")
-
 
 # ── 文档列表 ───────────────────────────────────────────────
 st.subheader("已上传文档")

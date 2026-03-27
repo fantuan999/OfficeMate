@@ -12,13 +12,6 @@ st.set_page_config(page_title="上传文档 - OfficeMate", page_icon="📤", lay
 st.title("📤 上传文档")
 st.caption("支持格式：PDF、TXT、DOCX、XLSX、CSV")
 
-# ── 侧边栏导航 ─────────────────────────────────────────────
-with st.sidebar:
-    st.title("🏢 OfficeMate")
-    st.divider()
-    st.page_link("app.py", label="智能问答", icon="💬")
-    st.page_link("pages/manage.py", label="知识管理", icon="📚")
-
 
 # ── 上传区域 ───────────────────────────────────────────────
 col1, col2 = st.columns([2, 1])
