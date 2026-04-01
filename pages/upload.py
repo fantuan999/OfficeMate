@@ -6,6 +6,15 @@ import streamlit as st
 from config import DOC_CATEGORIES, LOGS_DIR, SUPPORTED_FORMATS
 from services.doc_service import process_and_store, save_uploaded_file
 
+# ── 权限检查 ───────────────────────────────────────────────
+if "user" not in st.session_state:
+    st.warning("请先登录。")
+    st.stop()
+
+if st.session_state.user.get("role") != "admin":
+    st.warning("无上传权限，请联系管理员。")
+    st.stop()
+
 st.title("📤 知识上传")
 st.caption("上传企业内部制度、流程、通知与 FAQ 文档，并补充分类、标题和版本信息。")
 

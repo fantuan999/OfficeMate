@@ -272,41 +272,81 @@ git push
 
 ---
 
-#### Day 7 — MySQL 历史消息
+#### Day 7 — MySQL 用户认证 + 历史消息
+
+设计文档：`docs/superpowers/specs/2026-04-01-mysql-history-design.md`
+
+**数据库结构（三张表）：**
+- `users`：user_id, username (UNIQUE), role (employee/admin), created_at
+- `sessions`：session_id (PK), user_id (FK), created_at, last_updated
+- `messages`：id, session_id (FK), role (user/assistant), content, created_at
 
 步骤：
-1. 安装 MySQL 依赖
+1. 确认依赖（已在 requirements.txt）
 ```bash
-pip install mysql-connector-python sqlalchemy
+# SQLAlchemy 已安装，确认 mysql-connector-python
+pip install mysql-connector-python
 ```
 
-2. 创建数据库和表
+2. 在 MySQL 创建数据库和三张表
 ```sql
-CREATE TABLE qa_history (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    session_id VARCHAR(100),
-    question TEXT,
-    answer TEXT,
-    cache_hit BOOLEAN,
-    response_time_ms INT,
+CREATE DATABASE IF NOT EXISTS officemate;
+USE officemate;
+
+CREATE TABLE users (
+    user_id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    role ENUM('employee', 'admin') DEFAULT 'employee',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE sessions (
+    session_id VARCHAR(50) PRIMARY KEY,
+    user_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
+CREATE TABLE messages (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    session_id VARCHAR(50) NOT NULL,
+    role ENUM('user', 'assistant') NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES sessions(session_id)
 );
 ```
 
 3. 实现 `services/history_service.py`
-   - `save_qa(session_id, question, answer, cache_hit, response_time)`
-   - `get_history(session_id)` — 查询历史对话
+   - `get_or_create_user(username)` → 返回 {user_id, username, role}，不存在则创建（默认 employee）
+   - `create_session(user_id)` → 创建 session 记录，返回 session_id
+   - `save_message(session_id, role, content)` → 存单条消息，更新 last_updated
+   - `get_session_messages(session_id, n=MAX_HISTORY_ROUNDS)` → 返回最近 n 轮 [{"question":..,"answer":..}]
+   - `list_user_sessions(user_id, n=5)` → 返回最近 n 个 session（含 preview）
 
-4. 替换原来的 JSON 日志存储
+4. 修改 `pages/qa.py`
+   - 移除 JSON 会话函数（`_save_current_session`、`_load_session`、`_list_recent_sessions`）
+   - 首次加载无 session_state.user → 显示用户名登录框
+   - 登录后：`get_or_create_user()` → `create_session()` → 存入 session_state
+   - 每次回答后：`save_message()` 存 user + assistant 两条
+   - 侧边栏：`list_user_sessions()` 替换原 JSON 扫描
+   - 侧边栏显示用户名，admin 显示角色标识
 
-5. git push
+5. 修改 `pages/upload.py`
+   - 页面顶部检查 `st.session_state.user["role"] == "admin"`
+   - 非 admin 显示 `st.warning("无上传权限")` 并 `st.stop()`
+
+6. `qa_service.py` 不改，history 仍作为参数传入（保持解耦）
+
+7. git push
 ```bash
 git add .
-git commit -m "Day 7: MySQL 存储历史消息，替换 JSON 文件存储"
+git commit -m "Day 7: MySQL 用户认证与历史消息，username 登录，role 权限控制"
 git push
 ```
 
-**今天学到的：** SQLAlchemy ORM，多轮对话存储，结构化日志
+**今天学到的：** SQLAlchemy Core，用户权限设计，session 与 message 分层存储
 
 ---
 
@@ -341,9 +381,9 @@ git push
 步骤：
 1. 修改 `services/qa_service.py` 支持 streaming
 2. 修改 Streamlit UI 用 `st.write_stream()` 展示流式输出
-3. 注意：缓存命中时不需要流式（直接返回）
+<!-- 3. 注意：缓存命中时不需要流式（直接返回） -->
 
-4. git push
+3. git push
 ```bash
 git add .
 git commit -m "Day 9: 流式输出，提升用户体验"
