@@ -49,6 +49,8 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
 CACHE_TTL = 3600                   # 缓存过期时间（秒）
 CACHE_SIMILARITY_THRESHOLD = 0.85  # cosine 相似度命中阈值
+MAX_CACHE_SIZE = 200               # 最大缓存条数，超出触发 eviction
+CACHE_EVICTION_POLICY = "lru"      # lru / lfu / ttl / semantic
 
 # ── MySQL 历史消息配置（Phase 2）──────────────────────────
 MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")

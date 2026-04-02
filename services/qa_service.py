@@ -4,10 +4,10 @@ from langchain_community.chat_models import ChatTongyi
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 
 from config import DASHSCOPE_API_KEY, LLM_MODEL, MAX_HISTORY_ROUNDS
 from services.retriever_service import format_docs, get_retriever
+from services.cache_service import get_cached_answer, set_cache
 
 # ── 问题类型关键词映射 ──────────────────────────────────────
 _QUESTION_TYPE_KEYWORDS = {
@@ -57,7 +57,7 @@ def ask(
     history: Optional[list[dict]] = None,
 ) -> dict:
     """
-    RAG 问答主流程（LCEL 风格）
+    RAG 问答主流程。
 
     参数：
         question: 用户问题
@@ -66,13 +66,30 @@ def ask(
 
     返回：
         {
-            "answer": str,        # LLM 回答
-            "sources": list[str], # 引用文档名（去重）
-            "question_type": str, # 推断的问题类型
+            "answer": str,
+            "sources": list[str],
+            "question_type": str,
+            "cache_hit": bool,
         }
     """
     question_type = _infer_question_type(question)
+
+    # ── 1. 查语义缓存 ──────────────────────────────────────
+    cached = get_cached_answer(question)
+    if cached:
+        return {
+            "answer": cached,
+            "sources": [],
+            "question_type": question_type,
+            "cache_hit": True,
+        }
+
+    # ── 2. Cache MISS：走完整 RAG pipeline ─────────────────
+    # 先调 retriever 拿 docs，同时得到 context 和 sources（只调一次）
     retriever = get_retriever(category)
+    docs = retriever.invoke(question)
+    context = format_docs(docs)
+    sources = list({d.metadata.get("source_filename", "未知") for d in docs})
 
     prompt = ChatPromptTemplate.from_messages([
         SystemMessage(content=SYSTEM_PROMPT),
@@ -81,32 +98,22 @@ def ask(
     ])
 
     llm = ChatTongyi(model=LLM_MODEL, dashscope_api_key=DASHSCOPE_API_KEY)
+    rag_chain = prompt | llm | StrOutputParser()
 
-    # ── LCEL chain（黑马风格）────────────────────────────────
-    # retriever 直接串进 chain，|format_docs 把 Document 列表转成字符串
-    # RunnablePassthrough() 把原始输入（question）原样传到下一步
-    # RunnableLambda(lambda _: ...) 忽略输入，注入静态值（问题类型/分类/历史）
-    rag_chain = (
-        {
-            "context": retriever | format_docs,
-            "question": RunnablePassthrough(),
-            "question_type": RunnableLambda(lambda _: question_type),
-            "category": RunnableLambda(lambda _: category or "全部"),
-            "history": RunnableLambda(lambda _: _build_history_messages(history or [])),
-        }
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
+    answer = rag_chain.invoke({
+        "context": context,
+        "question": question,
+        "question_type": question_type,
+        "category": category or "全部",
+        "history": _build_history_messages(history or []),
+    })
 
-    answer = rag_chain.invoke(question)
-
-    # 单独调用 retriever 拿来源文件名（用于 UI 显示引用）
-    docs = retriever.invoke(question)
-    sources = list({d.metadata.get("source_filename", "未知") for d in docs})
+    # ── 3. 存入缓存 ────────────────────────────────────────
+    set_cache(question, answer)
 
     return {
         "answer": answer,
         "sources": sources,
         "question_type": question_type,
+        "cache_hit": False,
     }
