@@ -1,4 +1,5 @@
-from typing import Optional
+import time
+from typing import Generator, Optional
 
 from langchain_community.chat_models import ChatTongyi
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -117,3 +118,64 @@ def ask(
         "question_type": question_type,
         "cache_hit": False,
     }
+
+
+def ask_stream(
+    question: str,
+    category: Optional[str] = None,
+    history: Optional[list[dict]] = None,
+) -> Generator[str, None, dict]:
+    """
+    流式问答，逐 token yield 字符串。
+    Cache HIT：逐字 yield 缓存答案（模拟打字效果）。
+    Cache MISS：通过 LangChain stream() 逐 token yield，结束后存缓存。
+
+    使用方式（在 qa.py 中）：
+        gen = ask_stream(question, category, history)
+        answer = st.write_stream(gen)
+
+    通过 StopIteration.value 返回元数据：
+        {"sources": [...], "question_type": str, "cache_hit": bool}
+    """
+    question_type = _infer_question_type(question)
+
+    # ── 1. 查语义缓存 ──────────────────────────────────────
+    cached = get_cached_answer(question)
+    if cached:
+        # HIT：逐字 yield，加小延迟模拟打字效果
+        for char in cached:
+            yield char
+            time.sleep(0.005)
+        return {"sources": [], "question_type": question_type, "cache_hit": True, "answer": cached}
+
+    # ── 2. Cache MISS：流式 RAG pipeline ───────────────────
+    retriever = get_hybrid_retriever(category)
+    docs = retriever.invoke(question)
+    context = format_docs(docs)
+    sources = list({d.metadata.get("source_filename", "未知") for d in docs})
+
+    prompt = ChatPromptTemplate.from_messages([
+        SystemMessage(content=SYSTEM_PROMPT),
+        MessagesPlaceholder(variable_name="history"),
+        ("human", USER_PROMPT_TEMPLATE),
+    ])
+
+    llm = ChatTongyi(model=LLM_MODEL, dashscope_api_key=DASHSCOPE_API_KEY)
+    rag_chain = prompt | llm | StrOutputParser()
+
+    answer_chunks = []
+    for chunk in rag_chain.stream({
+        "context": context,
+        "question": question,
+        "question_type": question_type,
+        "category": category or "全部",
+        "history": _build_history_messages(history or []),
+    }):
+        answer_chunks.append(chunk)
+        yield chunk
+
+    # ── 3. 存入缓存 ────────────────────────────────────────
+    answer = "".join(answer_chunks)
+    set_cache(question, answer)
+
+    return {"sources": sources, "question_type": question_type, "cache_hit": False, "answer": answer}

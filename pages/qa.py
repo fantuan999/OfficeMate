@@ -6,7 +6,7 @@ import json
 import streamlit as st
 
 from config import DOC_CATEGORIES, LOGS_DIR
-from services.qa_service import ask
+from services.qa_service import ask_stream
 from services.history_service import (
     get_or_create_user,
     create_session,
@@ -207,23 +207,28 @@ def _process_question(prompt: str):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("正在检索和生成回答..."):
-            t0 = time.time()
-            # 从 MySQL 取历史传给 qa_service
-            history = get_session_messages(st.session_state.session_id)
-            result = ask(
-                question=prompt,
-                category=None if st.session_state.selected_category == "全部" else st.session_state.selected_category,
-                history=history,
-            )
-            elapsed = time.time() - t0
+        t0 = time.time()
+        history = get_session_messages(st.session_state.session_id)
+        category = None if st.session_state.selected_category == "全部" else st.session_state.selected_category
 
-        answer = result["answer"]
-        sources = result["sources"]
-        q_type = result["question_type"]
-        cache_hit = result.get("cache_hit", False)
+        # 用 wrapper 捕获 generator 结束后的元数据
+        meta_container = {}
 
-        st.markdown(answer)
+        def _stream_with_meta():
+            gen = ask_stream(question=prompt, category=category, history=history)
+            try:
+                while True:
+                    yield next(gen)
+            except StopIteration as e:
+                if e.value:
+                    meta_container.update(e.value)
+
+        answer = st.write_stream(_stream_with_meta())
+        elapsed = time.time() - t0
+
+        sources = meta_container.get("sources", [])
+        q_type = meta_container.get("question_type", "咨询")
+        cache_hit = meta_container.get("cache_hit", False)
 
         if sources:
             with st.expander(f"引用来源（{len(sources)} 个文档）"):
