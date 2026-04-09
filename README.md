@@ -9,10 +9,7 @@
 
 **应用层：** 企业员工可上传内部制度、流程、通知文档，通过自然语言提问获取结构化回答。
 
-**研究层：** 针对 Task 4.3（Adaptive caching mechanisms for efficient inference）的 demo 系统，研究语义缓存的 eviction 策略在 RAG workload 下的性能表现。
-
-**Research Question:**
-> How do semantic similarity thresholds interact with workload skew (Zipf α) to affect cache efficiency in RAG systems under Edge constraints?
+**研究层：** 研究语义缓存的 eviction 策略在 RAG workload 下的性能表现，结合 Queueing Network 对缓存效率进行定量分析。
 
 ---
 
