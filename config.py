@@ -28,6 +28,8 @@ CHROMA_PERSIST_DIR = str(CHROMA_DIR)
 CHUNK_SIZE = 800        # 每个文本块的字符数（参考 OfficeMate）
 CHUNK_OVERLAP = 120     # 相邻块的重叠字符数（保证上下文连贯）
 TOP_K_RESULTS = 4       # 检索时返回的最相关文档块数量
+BM25_WEIGHT = 0.5       # 混合检索中 BM25 权重
+VECTOR_WEIGHT = 0.5     # 混合检索中向量检索权重
 MAX_HISTORY_ROUNDS = 4  # 多轮对话保留的历史轮数
 
 # ── 支持的文档格式 ─────────────────────────────────────────

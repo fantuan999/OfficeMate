@@ -6,7 +6,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from config import DASHSCOPE_API_KEY, LLM_MODEL, MAX_HISTORY_ROUNDS
-from services.retriever_service import format_docs, get_retriever
+from services.retriever_service import format_docs, get_hybrid_retriever
 from services.cache_service import get_cached_answer, set_cache
 
 # ── 问题类型关键词映射 ──────────────────────────────────────
@@ -86,7 +86,7 @@ def ask(
 
     # ── 2. Cache MISS：走完整 RAG pipeline ─────────────────
     # 先调 retriever 拿 docs，同时得到 context 和 sources（只调一次）
-    retriever = get_retriever(category)
+    retriever = get_hybrid_retriever(category)
     docs = retriever.invoke(question)
     context = format_docs(docs)
     sources = list({d.metadata.get("source_filename", "未知") for d in docs})
