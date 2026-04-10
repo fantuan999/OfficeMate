@@ -142,7 +142,7 @@ def set_cache(question: str, answer: str) -> None:
     key = f"cache:{uuid4().hex}"
     now = time.time()
 
-    r.hset(key, mapping={
+    r.hset(key, mapping={ 
         "question": question.encode("utf-8"),
         "answer": answer.encode("utf-8"),
         "embedding": embedding.tobytes(),

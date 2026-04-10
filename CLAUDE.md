@@ -429,15 +429,28 @@ git push
 
 ```python
 class WorkloadGenerator:
-    def generate_zipf(self, alpha, n_queries, n_unique):
-        """Zipf 分布查询 trace"""
-        # alpha 控制倾斜程度：α 越大，越少的问题占越多的请求
+    def generate_zipf(self, alpha, n_queries, questions):
+        """Zipf 分布查询 trace
+        - alpha：倾斜程度，越大越集中
+        - n_queries：总查询次数
+        - questions：问题池列表，返回按 Zipf 分布采样的问题序列
+        """
         
     def generate_poisson(self, rate, duration):
-        """Poisson 到达过程"""
+        """Poisson 到达过程
+        - rate：平均每秒请求数
+        - duration：持续时间（秒）
+        - 返回：时间戳列表 [t1, t2, ...]
+        - 间隔服从指数分布 np.random.exponential(1/rate)
+        """
         
-    def generate_burst(self, normal_rate, burst_rate, burst_duration):
-        """突发流量模式"""
+    def generate_burst(self, normal_rate, burst_rate, burst_duration, total_duration):
+        """突发流量模式（单次 burst）
+        - 结构：正常阶段 → 突发阶段 → 正常阶段
+        - 正常阶段各占 (total_duration - burst_duration) / 2
+        - 返回：时间戳列表，burst 段时间戳已做偏移拼接
+        - 如需多次 burst，后续可加 n_bursts 参数扩展
+        """
 ```
 
 2. 生成三种 workload trace 并可视化分布
@@ -460,7 +473,7 @@ git push
 
 实验矩阵（3 × 3 × 4 = 36 组）：
 ```
-自变量1：Zipf α ∈ {0.5, 1.0, 1.5}
+自变量1：Zipf α ∈ {1.1, 1.5, 2.0}（np.random.zipf 要求 a > 1）
 自变量2：Similarity threshold ∈ {0.75, 0.85, 0.95}
 缓存策略：LRU / LFU / TTL / 语义阈值
 
