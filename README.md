@@ -115,7 +115,7 @@ streamlit run app.py
 
 ### Phase 2 — 语义缓存 + 存储升级
 
-- **Redis 语义缓存**：对语义相似的问题（cosine similarity > 0.85）直接返回缓存答案，响应时间从 ~3s 降至 ~50ms。支持四种 eviction 策略：LRU / LFU / TTL / Semantic
+- **Redis 语义缓存**：对语义相似的问题（cosine similarity > 0.85）直接返回缓存答案，响应时间从 ~6.4s（LLM 生成）降至 ~7ms（缓存命中）。支持四种 eviction 策略：LRU / LFU / TTL / Semantic
 - **用户认证与权限**：用户名登录，employee / admin 两种角色。admin 才能上传文档
 - **MySQL 历史消息**：对话历史按用户和会话持久化存储，支持跨会话历史恢复
 - **混合检索**：BM25（jieba 分词）+ 向量检索，通过 EnsembleRetriever 融合，提升精确词汇的召回率
