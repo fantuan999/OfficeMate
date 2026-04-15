@@ -37,7 +37,17 @@ for alpha in ALPHAS:
             hits = 0
             for q in queries:
                 t0 = time.time()
-                result = ask(q) # cache -> RAG -> similar + prompt -> LLM -> answer
+                for attempt in range(3):
+                    try:
+                        result = ask(q) # cache -> RAG -> similar + prompt -> LLM -> answer
+                        break
+                    except Exception as e:
+                        if attempt == 2:
+                            print(f"  [WARN] query failed after 3 attempts: {e}")
+                            result = {"cache_hit": False, "answer": ""}
+                        else:
+                            print(f"  [RETRY {attempt+1}] {e}")
+                            time.sleep(2)
                 latencies.append(time.time() - t0)
                 if result["cache_hit"]:
                     hits += 1

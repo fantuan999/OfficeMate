@@ -7,3 +7,7 @@ storage/docs/
 storage/logs/
 experiments/results/
 .DS_Store
+docs/
+.env.example
+IMPROVEMENTS.md
+CLAUDE.md
