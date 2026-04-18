@@ -73,13 +73,18 @@ def _evict(r: redis.Redis, incoming_embedding: Optional[np.ndarray] = None) -> N
 
     elif CACHE_EVICTION_POLICY == "semantic" and incoming_embedding is not None:
         # 删除与新问题余弦相似度最低的（最无关的）
-        def similarity_to_incoming(k: str) -> float:
-            emb_bytes = r.hget(k, "embedding")
-            if emb_bytes is None:
-                return 1.0  # 无法比较，保留
-            stored = np.frombuffer(emb_bytes, dtype=np.float32)
-            return _cosine_similarity(incoming_embedding, stored)
-        target = min(keys, key=similarity_to_incoming)
+        # VSIM取出前n歌相似度最高的，最后一个就是相似度最低的
+        norm = np.linalg.norm(incoming_embedding)
+        incoming_norm = incoming_embedding / norm if norm > 0 else incoming_embedding
+        total = r.execute_command("VCARD", "cache:vectors") # total number of cached vectors
+        results = r.execute_command(
+            "VSIM", "cache:vectors",
+            "VALUES", 384,
+            *incoming_norm.tolist(),
+            "COUNT", total,
+            "WITHSCORES"
+        )
+        target = results[-2].decode() # last one is the score
 
     else:
         # fallback：删最旧的
@@ -87,42 +92,42 @@ def _evict(r: redis.Redis, incoming_embedding: Optional[np.ndarray] = None) -> N
 
     r.delete(target)
     r.srem(_KEYS_SET, target)
+    r.execute_command("VREM", "cache:vectors", target)
 
 
 def get_cached_answer(question: str) -> Optional[str]:
     """
-    查语义缓存。
+    查语义缓存。使用Reids Vectorset进行ANN搜索
     - 命中（cosine similarity > threshold）：更新 last_accessed / access_count，返回答案
     - 未命中：返回 None
     """
     r = _get_redis()
-    keys = [k.decode() for k in r.smembers(_KEYS_SET)]
-    if not keys:
-        return None
 
     query_emb = _encode(question)
-    best_key = None
-    best_score = -1.0
+    norm = np.linalg.norm(query_emb)
+    query_norm = query_emb / norm if norm > 0 else query_emb
 
-    for key in keys:
-        emb_bytes = r.hget(key, "embedding")
-        if emb_bytes is None:
-            continue
-        stored_emb = np.frombuffer(emb_bytes, dtype=np.float32)
-        score = _cosine_similarity(query_emb, stored_emb)
-        if score > best_score:
-            best_score = score
-            best_key = key
+    results = r.execute_command(
+        "VSIM", "cache:vectors",
+        "VALUES", 384,
+        *query_norm.tolist(),
+        "COUNT", 1,
+        "WITHSCORES"
+    )
 
-    if best_key and best_score >= CACHE_SIMILARITY_THRESHOLD:
-        # 更新访问元信息
-        r.hset(best_key, mapping={
+    if not results: return None
+
+    elem_name = results[0].decode()
+    score = float(results[1])
+
+    if score >= CACHE_SIMILARITY_THRESHOLD:
+        r.hset(elem_name, mapping={
             "last_accessed": time.time(),
-            "access_count": int(r.hget(best_key, "access_count") or 0) + 1,
+            "access_count": int(r.hget(elem_name, "access_count") or 0) + 1,
         })
-        answer = r.hget(best_key, "answer")
+        answer = r.hget(elem_name, "answer")
         return answer.decode("utf-8") if answer else None
-
+    
     return None
 
 
@@ -152,6 +157,20 @@ def set_cache(question: str, answer: str) -> None:
     })
     r.expire(key, CACHE_TTL)
     r.sadd(_KEYS_SET, key)
+
+    norm = np.linalg.norm(embedding)
+    if norm > 0:
+        normalised = embedding / norm
+    else:
+        normalised = embedding
+
+    # VADD leu VALUES dim v1 v2 ... elem_name
+    r.execute_command(
+        "VADD", "cache:vectors",
+        "VALUES", 384,
+        *normalised.tolist(),
+        key
+    )
 
 
 def get_cache_stats() -> dict:
